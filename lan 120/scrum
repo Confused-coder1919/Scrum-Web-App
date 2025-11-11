@@ -1,0 +1,1124 @@
+import React, { useMemo, useRef, useState, useEffect } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  AlertCircle,
+  Clock,
+  HelpCircle,
+  Info,
+  PlayCircle,
+  RefreshCw,
+  ShieldCheck,
+  Trophy,
+  XCircle,
+  CheckCircle2,
+  Sparkles,
+  Filter,
+  BookOpenCheck,
+} from "lucide-react";
+
+/**
+ * Scrum Myths & Truths — Interactive Quiz App
+ * -------------------------------------------------------
+ * Features
+ * - 40+ certification-grade statements grouped by category
+ * - Truth/Myth (True/False) with immediate feedback & explanation
+ * - Per-question timer (configurable) with progress ring
+ * - Hints (one per question) cost points when used
+ * - Free-text justification box for students (saved in review)
+ * - Score, streaks, accuracy, and category breakdown
+ * - Category filter (play all or selected categories)
+ * - Pause/Resume + Retry + Review mode
+ * - LocalStorage persistence of best score
+ *
+ * Tech
+ * - Single-file React component using shadcn/ui + Tailwind
+ * - No back end required
+ */
+
+// ---------- DATA: Questions (carefully crafted to align with Scrum Guide 2020) ----------
+
+type QuizQuestion = {
+  id: string;
+  category: string;
+  statement: string;
+  answer: boolean; // true = Truth, false = Myth in the sense of the statement
+  hint: string;
+  explanation: string;
+};
+
+const QUESTION_BANK: QuizQuestion[] = [
+  // 🔥 Mainstream Myths & Hard Truths (Scrum Guide 2020 aligned)
+  // Roles & Power Myths
+  {
+    id: "Q1",
+    category: "Roles",
+    statement:
+      "The Product Owner is the boss of the Scrum Team and can assign tasks to Developers.",
+    answer: false,
+    hint: "PO = value, not people management.",
+    explanation:
+      "Myth. The PO maximizes value and orders the Product Backlog. Developers are self-managing and decide who does what, when, and how. A PO assigning tasks undermines self-management and transparency.",
+  },
+  {
+    id: "Q2",
+    category: "Roles",
+    statement:
+      "The Scrum Master is a project manager with authority to approve or reject work.",
+    answer: false,
+    hint: "Servant leader ≠ controller.",
+    explanation:
+      "Myth. The Scrum Master serves the team and the organization by coaching, facilitating empiricism, and removing impediments. They do not approve work; quality is governed by the Definition of Done and peer review.",
+  },
+  {
+    id: "Q3",
+    category: "Roles",
+    statement:
+      "The Daily Scrum belongs to Developers, who choose whatever structure helps them inspect progress toward the Sprint Goal.",
+    answer: true,
+    hint: "Self-managed event.",
+    explanation:
+      "Truth. Developers own the Daily Scrum. They inspect progress, adapt their plan, and decide the format—it's not a status meeting for the Scrum Master.",
+  },
+  {
+    id: "Q4",
+    category: "Roles",
+    statement:
+      "There should be a separate Business Analyst or Project Manager role inside the Scrum Team.",
+    answer: false,
+    hint: "Count the official roles.",
+    explanation:
+      "Myth. Scrum defines exactly three accountabilities: Product Owner, Scrum Master, and Developers. Business analysis and project planning are skills, not separate roles in Scrum.",
+  },
+  {
+    id: "Q5",
+    category: "Roles",
+    statement:
+      "Only the Product Owner orders the Product Backlog, even when others refine items or suggest priorities.",
+    answer: true,
+    hint: "Single value voice.",
+    explanation:
+      "Truth. Advice is welcome, yet accountability for ordering stays with the Product Owner so stakeholders have one clear view of value.",
+  },
+
+  // Events & Rhythm Myths
+  {
+    id: "Q6",
+    category: "Events",
+    statement: "A Sprint can end early if all work is finished ahead of time.",
+    answer: false,
+    hint: "Timebox vs. scope.",
+    explanation:
+      "Myth. A Sprint is a fixed timebox and ends when the timebox ends. If planned work finishes early, Developers collaborate with the PO to pull more scope that supports the Sprint Goal or improve quality.",
+  },
+  {
+    id: "Q7",
+    category: "Events",
+    statement:
+      "The Sprint Review is a collaborative working session with stakeholders to inspect a Done Increment and adapt the Product Backlog.",
+    answer: true,
+    hint: "Inspect + adapt together.",
+    explanation:
+      "Truth. Scrum Guide 2020 frames the Review as a conversation about outcomes, feedback, and next steps around the Increment—not a slide demo run in isolation.",
+  },
+  {
+    id: "Q8",
+    category: "Events",
+    statement:
+      "Retrospectives are optional if the team is under delivery pressure.",
+    answer: false,
+    hint: "Engine of improvement.",
+    explanation:
+      "Myth. Retrospectives drive continuous improvement. Skipping them creates repeating problems, hidden debt, and declining morale.",
+  },
+  {
+    id: "Q9",
+    category: "Events",
+    statement:
+      "Backlog Refinement is a formal Scrum event with a fixed timebox.",
+    answer: false,
+    hint: "Event vs activity.",
+    explanation:
+      "Myth. Refinement is an ongoing activity. Scrum only timeboxes Sprint, Planning, Daily, Review, and Retrospective.",
+  },
+  {
+    id: "Q10",
+    category: "Events",
+    statement:
+      "Daily Scrum must use the three questions and each person must speak in turn.",
+    answer: false,
+    hint: "Purpose over format.",
+    explanation:
+      "Myth. Developers choose any structure that helps inspect progress toward the Sprint Goal in 15 minutes. The three questions are optional guidance, not a script.",
+  },
+
+  // Artifacts & Commitments Myths
+  {
+    id: "Q11",
+    category: "Artifacts",
+    statement:
+      "User stories are mandatory in Scrum and must follow the As-a/I-want/So-that template.",
+    answer: false,
+    hint: "Framework vs practices.",
+    explanation:
+      "Myth. Scrum doesn't prescribe user stories or formats. Any clear Product Backlog Item is fine if it supports transparency and inspection.",
+  },
+  {
+    id: "Q12",
+    category: "Artifacts",
+    statement:
+      "The Definition of Ready is required by Scrum before work can be pulled into a Sprint.",
+    answer: false,
+    hint: "Required or optional?",
+    explanation:
+      "Myth. Scrum does not mandate a Definition of Ready. Teams may use readiness heuristics, but the essential quality commitment is the Definition of Done for the Increment.",
+  },
+  {
+    id: "Q13",
+    category: "Artifacts",
+    statement:
+      "Developers continuously update the Sprint Backlog as new work is discovered while keeping the Sprint Goal intact.",
+    answer: true,
+    hint: "Living plan.",
+    explanation:
+      "Truth. The Sprint Backlog is an emergent plan owned by Developers. They add, split, and reorder tasks as they learn more, provided the Sprint Goal still holds.",
+  },
+  {
+    id: "Q14",
+    category: "Artifacts",
+    statement:
+      "The Product Backlog can have multiple Product Goals active at the same time to serve different markets.",
+    answer: false,
+    hint: "Focus.",
+    explanation:
+      "Myth. One Product Backlog holds one Product Goal at a time to focus the team and stakeholders. Goals can change sequentially, not concurrently.",
+  },
+  {
+    id: "Q15",
+    category: "Artifacts",
+    statement: "Acceptance Criteria and Definition of Done are the same thing.",
+    answer: false,
+    hint: "Item vs Increment.",
+    explanation:
+      "Myth. Acceptance Criteria are specific to a backlog item; the Definition of Done applies to the Increment and governs overall completeness and quality.",
+  },
+
+  // Estimation & Metrics Myths
+  {
+    id: "Q16",
+    category: "Metrics",
+    statement:
+      "Velocity should increase every Sprint; otherwise the team is underperforming.",
+    answer: false,
+    hint: "Goodhart's law.",
+    explanation:
+      "Myth. Velocity is a local planning signal for a team, not a performance KPI. Forcing it to rise distorts behavior and damages quality and transparency.",
+  },
+  {
+    id: "Q17",
+    category: "Metrics",
+    statement: "Story points are time; 1 point equals a fixed number of hours.",
+    answer: false,
+    hint: "Relative estimation.",
+    explanation:
+      "Myth. Points are a relative complexity/effort measure. Converting them to hours breaks comparability and invites micromanagement.",
+  },
+  {
+    id: "Q18",
+    category: "Metrics",
+    statement:
+      "Management should compare velocities across teams to find the best performers.",
+    answer: false,
+    hint: "Context matters.",
+    explanation:
+      "Myth. Velocities are not comparable across teams—different contexts, backlogs, and scales. Compare outcomes, quality, and flow, not point totals.",
+  },
+  {
+    id: "Q19",
+    category: "Metrics",
+    statement:
+      "Scrum value includes outcomes like risk reduction, learning, compliance, and customer satisfaction—not only revenue.",
+    answer: true,
+    hint: "Multiple value lenses.",
+    explanation:
+      "Truth. The Product Owner balances diverse value signals. Revenue matters, but so do adoption, risk burn-down, regulatory coverage, and validated learning.",
+  },
+  {
+    id: "Q20",
+    category: "Metrics",
+    statement:
+      "Some Scrum Teams forecast delivery using flow metrics or #NoEstimates experiments instead of traditional story-point estimation.",
+    answer: true,
+    hint: "Empirical forecasting.",
+    explanation:
+      "Truth. Scrum requires a forecast, not a specific estimation approach. Teams can rely on flow metrics or throughput-based Monte Carlo simulations rather than points.",
+  },
+
+  // Scope & Change Myths
+  {
+    id: "Q21",
+    category: "Flow",
+    statement:
+      "New urgent work can be pushed into the Sprint by executives if it's critical.",
+    answer: false,
+    hint: "Team boundary.",
+    explanation:
+      "Myth. The Sprint Backlog belongs to Developers. Changes occur via collaboration with the PO and must respect the Sprint Goal; executives cannot inject work unilaterally.",
+  },
+  {
+    id: "Q22",
+    category: "Flow",
+    statement:
+      "Scope can be renegotiated mid-Sprint by the Product Owner and Developers while the Sprint Goal remains unchanged.",
+    answer: true,
+    hint: "Goal stable, scope flexible.",
+    explanation:
+      "Truth. Scrum keeps the Sprint Goal steady to preserve focus, yet the PO and Developers routinely adjust the Sprint Backlog so they can still meet that goal.",
+  },
+  {
+    id: "Q23",
+    category: "Flow",
+    statement:
+      "A hardening Sprint at the end of the release is a good Scrum practice to catch up on testing.",
+    answer: false,
+    hint: "Done every Sprint.",
+    explanation:
+      "Myth. Quality is built-in. Each Sprint must produce a Done Increment. Hardening Sprints hide undone work and reduce transparency.",
+  },
+  {
+    id: "Q24",
+    category: "Flow",
+    statement:
+      "Technical debt items should live on the Product Backlog and be pulled like any other work when they protect the Sprint Goal or Product Goal.",
+    answer: true,
+    hint: "Debt is product work.",
+    explanation:
+      "Truth. Scrum makes debt transparent. Treat it as Product Backlog work so prioritization, forecasting, and Done increments stay honest.",
+  },
+  {
+    id: "Q25",
+    category: "Flow",
+    statement:
+      "Keeping a consistent Sprint length builds a reliable cadence for inspection, forecasting, and stakeholder expectations.",
+    answer: true,
+    hint: "Cadence enables focus.",
+    explanation:
+      "Truth. Fixed-length Sprints create rhythm. Changing the timebox frequently erodes empiricism and comparability.",
+  },
+
+  // Stakeholders & Review Myths
+  {
+    id: "Q26",
+    category: "Stakeholders",
+    statement:
+      "Stakeholders attend the Review only when something big ships; otherwise they can skip.",
+    answer: false,
+    hint: "Feedback loop.",
+    explanation:
+      "Myth. Regular stakeholder participation in the Sprint Review is critical to inspect value and adapt the Product Backlog early.",
+  },
+  {
+    id: "Q27",
+    category: "Stakeholders",
+    statement:
+      "Stakeholders can add items directly to the Sprint Backlog during Review if they feel strongly.",
+    answer: false,
+    hint: "Backlog boundaries.",
+    explanation:
+      "Myth. Stakeholders provide feedback that influences the Product Backlog ordering via the PO. The Sprint Backlog remains owned by Developers.",
+  },
+  {
+    id: "Q28",
+    category: "Stakeholders",
+    statement:
+      "Evidence-based forecasting (burn-up charts, probabilistic ranges) gives leadership better dates than reverting to detailed Gantt charts.",
+    answer: true,
+    hint: "Empiricism beats certainty theater.",
+    explanation:
+      "Truth. Scrum’s cadence plus transparent metrics enable realistic projections; deterministic plans without feedback routinely mislead stakeholders.",
+  },
+
+  // Scaling & Org Myths
+  {
+    id: "Q29",
+    category: "Scaling",
+    statement:
+      "When scaling, each team should keep its own backlog and its own Definition of Done to move faster.",
+    answer: false,
+    hint: "One product.",
+    explanation:
+      "Myth. One product = one Product Backlog and a shared DoD to ensure a single integrated Increment and coherent value delivery.",
+  },
+  {
+    id: "Q30",
+    category: "Scaling",
+    statement:
+      "Copying the Spotify model structures is a proven path to agility.",
+    answer: false,
+    hint: "Context over cargo cult.",
+    explanation:
+      "Myth. Organizational patterns are context-specific. Copying structures without understanding principles often creates agile theater.",
+  },
+  {
+    id: "Q31",
+    category: "Scaling",
+    statement:
+      "Multiple Scrum Teams on one product align through a single Product Backlog, shared Definition of Done, and frequent integration.",
+    answer: true,
+    hint: "One product, one backlog.",
+    explanation:
+      "Truth. Scrum scaling starts with common artifacts and Done criteria so parallel teams still deliver a unified Increment.",
+  },
+
+  // Quality & Engineering Myths
+  {
+    id: "Q32",
+    category: "Quality",
+    statement:
+      "Only work that meets the shared Definition of Done becomes part of the Increment and can be shown in the Sprint Review.",
+    answer: true,
+    hint: "DoD governs Done.",
+    explanation:
+      "Truth. The Definition of Done is the quality gate. Anything short stays transparent as undone work instead of pretending it is releasable.",
+  },
+  {
+    id: "Q33",
+    category: "Quality",
+    statement:
+      "QA should be a separate team testing after the Sprint ends to ensure independence.",
+    answer: false,
+    hint: "Cross-functional teams.",
+    explanation:
+      "Myth. Scrum Teams are cross-functional and include testing capabilities so that each Sprint yields a Done, integrated Increment.",
+  },
+  {
+    id: "Q34",
+    category: "Quality",
+    statement:
+      "Scrum Teams create the documentation their Definition of Done requires so the Increment remains usable, supportable, and compliant.",
+    answer: true,
+    hint: "Right docs still matter.",
+    explanation:
+      "Truth. Working software is valued most, yet documentation that keeps the Increment valuable is still part of Done.",
+  },
+
+  // Planning & Discovery Myths
+  {
+    id: "Q35",
+    category: "Planning",
+    statement:
+      "Sprint Planning is just selecting items; the real planning happens later during the Sprint.",
+    answer: false,
+    hint: "Three topics.",
+    explanation:
+      "Myth. Sprint Planning sets the Sprint Goal, selects items, and crafts an initial plan. The plan can evolve, but intent and approach must be clear up front.",
+  },
+  {
+    id: "Q36",
+    category: "Planning",
+    statement:
+      "Discovery experiments and learning spikes can be Product Backlog Items that flow through Sprints like any other work.",
+    answer: true,
+    hint: "Discovery lives in the backlog.",
+    explanation:
+      "Truth. Scrum blends discovery and delivery; Product Owners order experiment PBIs to validate outcomes before scaling them.",
+  },
+  {
+    id: "Q37",
+    category: "Planning",
+    statement:
+      "Refinement should perfect all details before a Sprint, leaving no unknowns.",
+    answer: false,
+    hint: "Just enough.",
+    explanation:
+      "Myth. Refinement aims for shared understanding and just-enough detail. Over-specifying reduces adaptability and wastes time.",
+  },
+
+  // Remote & Tools Myths
+  {
+    id: "Q38",
+    category: "Remote",
+    statement:
+      "Distributed Scrum teams can run the Daily Scrum asynchronously as long as they inspect progress and adapt the plan within 24 hours.",
+    answer: true,
+    hint: "Outcome over meeting style.",
+    explanation:
+      "Truth. Purpose matters more than co-location. Async videos, shared boards, and staggered huddles still satisfy empiricism if the plan is updated daily.",
+  },
+  {
+    id: "Q39",
+    category: "Remote",
+    statement: "If we adopt the right agile tool, we’ll be doing Scrum.",
+    answer: false,
+    hint: "Tool ≠ process.",
+    explanation:
+      "Myth. Tools can support transparency but cannot replace empiricism, roles, events, and values. Process before tooling.",
+  },
+
+  // Release & Increments Myths
+  {
+    id: "Q40",
+    category: "Release",
+    statement:
+      "Every Sprint must produce a Done, usable Increment that is potentially releasable even if deployment happens later.",
+    answer: true,
+    hint: "Potentially releasable.",
+    explanation:
+      "Truth. Scrum demands a high-quality Increment each Sprint; business may delay release, but technical readiness cannot lag the Sprint cadence.",
+  },
+  {
+    id: "Q41",
+    category: "Release",
+    statement: "Multiple Increments per Sprint are not allowed.",
+    answer: false,
+    hint: "Continuous integration.",
+    explanation:
+      "Myth. Teams may create multiple Increments within a Sprint as long as each meets the Definition of Done.",
+  },
+
+  // Values & Culture Myths
+  {
+    id: "Q42",
+    category: "Values",
+    statement:
+      "Respect and Openness mean avoiding conflict to keep meetings pleasant.",
+    answer: false,
+    hint: "Healthy conflict.",
+    explanation:
+      "Myth. Respect and Openness enable candid discussion of risks and problems. Avoiding constructive conflict destroys transparency and learning.",
+  },
+  {
+    id: "Q43",
+    category: "Values",
+    statement:
+      "Living the Focus value often means swarming on the Sprint Goal instead of defending individual tickets.",
+    answer: true,
+    hint: "Goal over task ownership.",
+    explanation:
+      "Truth. Teams that swarm optimize for shared outcomes, which is exactly what the Focus value encourages.",
+  },
+  // Empiricism & Governance Myths
+  {
+    id: "Q44",
+    category: "Empiricism",
+    statement:
+      "Short inspect-and-adapt loops with real increments lower risk in complex work more than upfront detailed plans.",
+    answer: true,
+    hint: "Empiricism wins in complexity.",
+    explanation:
+      "Truth. Complexity makes predictions fragile; Scrum bets on transparency, inspection, and adaptation each Sprint to steer effectively.",
+  },
+  {
+    id: "Q45",
+    category: "Governance",
+    statement:
+      "To be compliant, Scrum teams must add change approval boards that sign off on every scope change during the Sprint.",
+    answer: false,
+    hint: "Adaptability.",
+    explanation:
+      "Myth. Governance should enable empiricism. Scope is renegotiated by PO and Developers to meet the Sprint Goal. Heavy external approvals mid-Sprint block adaptation and reduce transparency.",
+  },
+];
+
+// ---------- Utility ----------
+
+const shuffle = <T>(arr: T[]) => arr.slice().sort(() => Math.random() - 0.5);
+const groupBy = <T, K extends string | number>(xs: T[], key: (x: T) => K) =>
+  xs.reduce<Record<K, T[]>>((acc, x) => {
+    const k = key(x);
+    (acc[k] ||= []).push(x);
+    return acc;
+  }, {} as any);
+
+// Lightweight runtime self-checks (acts like simple test cases)
+function validateQuestionBank(qs: QuizQuestion[]) {
+  const ids = new Set<string>();
+  const dupes: string[] = [];
+  qs.forEach((q) => {
+    if (ids.has(q.id)) dupes.push(q.id);
+    ids.add(q.id);
+  });
+  const countOk = qs.length >= 40;
+  const hasAll = qs.every(
+    (q) => q.id && q.category && q.statement && typeof q.answer === "boolean"
+  );
+  return { dupes, countOk, hasAll, total: qs.length };
+}
+
+// ---------- Main App ----------
+
+export default function ScrumMythsQuizApp() {
+  // Config
+  const DEFAULT_SECONDS = 25; // per-question timer
+  const penaltyHint = 1; // points lost when viewing a hint
+  const pointsCorrect = 2;
+  const pointsWrong = 0;
+
+  const categories = useMemo(
+    () => Array.from(new Set(QUESTION_BANK.map((q) => q.category))),
+    []
+  );
+
+  // UI state
+  const [selectedCats, setSelectedCats] = useState<string[]>(categories);
+  const [started, setStarted] = useState(false);
+  const [index, setIndex] = useState(0);
+  const [order, setOrder] = useState<number[]>([]);
+  const [secondsLeft, setSecondsLeft] = useState(DEFAULT_SECONDS);
+  const timerRef = useRef<number | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [truthOnLeft, setTruthOnLeft] = useState(true);
+
+  // Gameplay state
+  const filtered = useMemo(
+    () => QUESTION_BANK.filter((q) => selectedCats.includes(q.category)),
+    [selectedCats]
+  );
+  const [answers, setAnswers] = useState<
+    {
+      id: string;
+      correct: boolean;
+      usedHint: boolean;
+      justification: string;
+      timeSpent: number;
+    }[]
+  >([]);
+  const [hintShown, setHintShown] = useState(false);
+  const [justification, setJustification] = useState("");
+  const [reveal, setReveal] = useState<null | {
+    correct: boolean;
+    explanation: string;
+  }>(null);
+  const [timeSpentThis, setTimeSpentThis] = useState(0);
+
+  const current = order.length ? filtered[order[index]] : undefined;
+
+  useEffect(() => {
+    if (!current) return;
+    setTruthOnLeft(Math.random() < 0.5);
+  }, [current?.id]);
+
+  // Setup order when starting
+  useEffect(() => {
+    if (!started) return;
+    const ord = shuffle(filtered.map((_, i) => i));
+    setOrder(ord);
+    setIndex(0);
+    setSecondsLeft(DEFAULT_SECONDS);
+    setHintShown(false);
+    setJustification("");
+    setReveal(null);
+    setAnswers([]);
+    setPaused(false);
+    setTimeSpentThis(0);
+  }, [started]);
+
+  // Timer
+  useEffect(() => {
+    if (!started || paused || !current || reveal) return;
+    timerRef.current && clearInterval(timerRef.current);
+    const startedAt = Date.now();
+    timerRef.current = window.setInterval(() => {
+      setSecondsLeft((s) => {
+        if (s <= 1) {
+          clearInterval(timerRef.current!);
+          setReveal({ correct: false, explanation: current.explanation });
+          // record as wrong due to timeout
+          setAnswers((prev) => [
+            ...prev,
+            {
+              id: current.id,
+              correct: false,
+              usedHint: hintShown,
+              justification,
+              timeSpent: DEFAULT_SECONDS - s + (Date.now() - startedAt) / 1000,
+            },
+          ]);
+          return 0;
+        }
+        setTimeSpentThis((t) => t + 1);
+        return s - 1;
+      });
+    }, 1000);
+    return () => timerRef.current && clearInterval(timerRef.current);
+  }, [started, paused, current, reveal]);
+
+  const score = useMemo(() => {
+    const base = answers.reduce(
+      (acc, a) => acc + (a.correct ? pointsCorrect : pointsWrong),
+      0
+    );
+    const hintCost = answers.reduce(
+      (acc, a) => acc + (a.usedHint ? penaltyHint : 0),
+      0
+    );
+    return Math.max(0, base - hintCost);
+  }, [answers]);
+
+  const total = filtered.length;
+  const progressPct = total ? Math.round((answers.length / total) * 100) : 0;
+
+  const startGame = () => setStarted(true);
+
+  const handleAnswer = (truth: boolean) => {
+    if (!current || reveal) return;
+    const correct = truth === current.answer;
+    setReveal({ correct, explanation: current.explanation });
+    setAnswers((prev) => [
+      ...prev,
+      {
+        id: current.id,
+        correct,
+        usedHint: hintShown,
+        justification,
+        timeSpent: DEFAULT_SECONDS - secondsLeft,
+      },
+    ]);
+    timerRef.current && clearInterval(timerRef.current);
+  };
+
+  const nextQuestion = () => {
+    if (index + 1 >= total) {
+      setReveal((r) => r || { correct: false, explanation: "" });
+      setPaused(true);
+      return; // finished
+    }
+    setIndex((i) => i + 1);
+    setSecondsLeft(DEFAULT_SECONDS);
+    setHintShown(false);
+    setJustification("");
+    setReveal(null);
+    setTimeSpentThis(0);
+  };
+
+  const resetAll = () => {
+    setStarted(false);
+    setOrder([]);
+    setIndex(0);
+    setAnswers([]);
+    setReveal(null);
+    setPaused(false);
+    setSecondsLeft(DEFAULT_SECONDS);
+    setHintShown(false);
+    setJustification("");
+    setTimeSpentThis(0);
+  };
+
+  const grouped = useMemo(
+    () => groupBy(filtered, (q) => q.category),
+    [filtered]
+  );
+
+  const accuracy = useMemo(() => {
+    if (!answers.length) return 0;
+    const correct = answers.filter((a) => a.correct).length;
+    return Math.round((correct / answers.length) * 100);
+  }, [answers]);
+
+  const answerButtons = useMemo(
+    () => {
+      const options = [
+        { label: "Truth", value: true, icon: CheckCircle2 },
+        { label: "Myth", value: false, icon: XCircle },
+      ];
+      return truthOnLeft ? options : [...options].reverse();
+    },
+    [truthOnLeft]
+  );
+
+  const [reviewMode, setReviewMode] = useState(false);
+
+  const currentIdxHuman = Math.min(answers.length + (reveal ? 0 : 1), total);
+
+  // Self-check results for dev/teacher
+  const qc = useMemo(() => validateQuestionBank(QUESTION_BANK), []);
+
+  return (
+    <TooltipProvider>
+      <div className="min-h-screen w-full bg-gradient-to-br from-slate-50 to-slate-100 p-4 md:p-8">
+        <div className="mx-auto max-w-5xl">
+          <header className="mb-4 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="h-8 w-8" />
+              <h1 className="text-2xl font-bold tracking-tight">
+                Scrum Myths & Truths — Interactive Quiz
+              </h1>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="text-sm">
+                Questions: {filtered.length}
+              </Badge>
+              <Badge
+                variant="outline"
+                className="text-sm flex items-center gap-1"
+              >
+                <Clock className="h-4 w-4" /> {DEFAULT_SECONDS}s / q
+              </Badge>
+              <Badge
+                variant="default"
+                className="text-sm flex items-center gap-1"
+              >
+                <Trophy className="h-4 w-4" /> Score: {score}
+              </Badge>
+            </div>
+          </header>
+
+          {/* Quick self-check badge */}
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+            {qc.dupes.length === 0 && qc.countOk && qc.hasAll ? (
+              <Badge variant="secondary">
+                Self-check: OK ({qc.total} questions)
+              </Badge>
+            ) : (
+              <Badge variant="destructive">
+                Self-check issues: dupes [{qc.dupes.join(", ")}]
+              </Badge>
+            )}
+          </div>
+
+          {/* Category Filter / Intro */}
+          {!started && (
+            <Card className="mb-6">
+              <CardContent className="p-6">
+                <div className="grid gap-4">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5" />
+                    <p className="text-slate-700">
+                      Test your Scrum mastery. Decide if each statement is a{" "}
+                      <span className="font-semibold">Truth</span> or a{" "}
+                      <span className="font-semibold">Myth</span>, justify your
+                      choice, and learn with hints and explanations.
+                    </p>
+                  </div>
+
+                  <div>
+                    <div className="mb-2 flex items-center gap-2">
+                      <Filter className="h-4 w-4" />
+                      <span className="font-medium">
+                        Choose categories (play all by default)
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {categories.map((c) => {
+                        const on = selectedCats.includes(c);
+                        return (
+                          <Button
+                            key={c}
+                            variant={on ? "default" : "outline"}
+                            size="sm"
+                            onClick={() =>
+                              setSelectedCats((prev) =>
+                                on ? prev.filter((x) => x !== c) : [...prev, c]
+                              )
+                            }
+                          >
+                            {c}
+                          </Button>
+                        );
+                      })}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedCats(categories)}
+                      >
+                        All
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedCats([])}
+                      >
+                        None
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <Info className="h-4 w-4" />
+                    <span>
+                      +{pointsCorrect} points for correct answers. Using a hint
+                      costs {penaltyHint} point. Timer auto-fails the question.
+                    </span>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <Button onClick={startGame} disabled={!selectedCats.length}>
+                      <PlayCircle className="mr-2 h-4 w-4" /> Start Quiz
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setReviewMode((v) => !v)}
+                    >
+                      <BookOpenCheck className="mr-2 h-4 w-4" /> Review
+                      Questions
+                    </Button>
+                  </div>
+
+                  {reviewMode && (
+                    <div className="mt-4 rounded-xl border bg-white p-4">
+                      <h3 className="mb-2 font-semibold">
+                        All Questions (by category)
+                      </h3>
+                      <Tabs defaultValue={Object.keys(grouped)[0]}>
+                        <TabsList className="flex flex-wrap gap-2">
+                          {Object.keys(grouped).map((cat) => (
+                            <TabsTrigger key={cat} value={cat}>
+                              {cat}
+                            </TabsTrigger>
+                          ))}
+                        </TabsList>
+                        {Object.entries(grouped).map(([cat, list]) => (
+                          <TabsContent key={cat} value={cat} className="mt-4">
+                            <ol className="grid gap-3 list-decimal pl-5">
+                              {list.map((q) => (
+                                <li key={q.id} className="text-sm">
+                                  <span className="font-medium">
+                                    {q.statement}
+                                  </span>
+                                  <div className="mt-1 text-xs text-slate-600">
+                                    Answer: {q.answer ? "Truth" : "Myth"} —{" "}
+                                    {q.explanation}
+                                  </div>
+                                </li>
+                              ))}
+                            </ol>
+                          </TabsContent>
+                        ))}
+                      </Tabs>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Game Panel */}
+          {started && current && (
+            <Card className="mb-6">
+              <CardContent className="p-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Badge variant="secondary">{current.category}</Badge>
+                    <span className="text-slate-600">
+                      Question {currentIdxHuman} / {total}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-40">
+                      <Progress value={(secondsLeft / DEFAULT_SECONDS) * 100} />
+                    </div>
+                    <div className="flex items-center gap-1 text-sm">
+                      <Clock className="h-4 w-4" /> {secondsLeft}s
+                    </div>
+                    <Button
+                      variant={paused ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setPaused((p) => !p)}
+                    >
+                      {paused ? "Resume" : "Pause"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="mb-4 rounded-lg bg-white p-4 shadow-sm">
+                  <p className="text-lg leading-relaxed">{current.statement}</p>
+                </div>
+
+                <div className="mb-3 grid gap-2 md:grid-cols-2">
+                  {answerButtons.map(({ label, value, icon: Icon }) => (
+                    <Button
+                      key={label}
+                      className="h-12"
+                      variant={value ? "default" : "secondary"}
+                      onClick={() => handleAnswer(value)}
+                    >
+                      <Icon className="mr-2 h-5 w-5" /> {label}
+                    </Button>
+                  ))}
+                </div>
+
+                <div className="mb-3">
+                  <label className="mb-1 block text-sm font-medium">
+                    Your justification (why?)
+                  </label>
+                  <Input
+                    placeholder="Write a short justification…"
+                    value={justification}
+                    onChange={(e) => setJustification(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setHintShown(true)}
+                        disabled={hintShown || !!reveal}
+                      >
+                        <HelpCircle className="mr-2 h-4 w-4" /> Hint{" "}
+                        {hintShown ? "(used)" : `(-${penaltyHint})`}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Costs {penaltyHint} point. Use wisely!</p>
+                    </TooltipContent>
+                  </Tooltip>
+
+                  <Button variant="ghost" size="sm" onClick={resetAll}>
+                    <RefreshCw className="mr-2 h-4 w-4" /> Restart
+                  </Button>
+                </div>
+
+                {/* Hint + Reveal */}
+                {hintShown && !reveal && (
+                  <div className="mt-3 rounded-md border border-dashed bg-slate-50 p-3 text-sm text-slate-700">
+                    <strong>Hint:</strong> {current.hint}
+                  </div>
+                )}
+
+                {reveal && (
+                  <div
+                    className={`mt-4 rounded-md p-4 text-sm ${
+                      reveal.correct ? "bg-emerald-50" : "bg-rose-50"
+                    }`}
+                  >
+                    <div className="mb-1 flex items-center gap-2 font-semibold">
+                      {reveal.correct ? (
+                        <>
+                          <CheckCircle2 className="h-4 w-4" /> Correct!
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="h-4 w-4" /> Not quite.
+                        </>
+                      )}
+                    </div>
+                    <p className="text-slate-700">{current.explanation}</p>
+                    <div className="mt-3 flex items-center justify-between">
+                      <div className="text-xs text-slate-600">
+                        Time used: {DEFAULT_SECONDS - secondsLeft}s{" "}
+                        {hintShown && <span>• Hint used</span>}
+                      </div>
+                      <Button onClick={nextQuestion}>Next</Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Results */}
+          {started && answers.length === total && (
+            <Card>
+              <CardContent className="p-6">
+                <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <h2 className="text-xl font-semibold flex items-center gap-2">
+                    <Trophy className="h-5 w-5" /> Your Results
+                  </h2>
+                  <div className="flex items-center gap-3">
+                    <Badge variant="default">Score: {score}</Badge>
+                    <Badge variant="secondary">Accuracy: {accuracy}%</Badge>
+                    <div className="w-40">
+                      <Progress value={progressPct} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mb-4 grid gap-4 md:grid-cols-2">
+                  <div className="rounded-lg border bg-white p-4">
+                    <h3 className="mb-2 font-medium">Category Breakdown</h3>
+                    <ul className="space-y-1 text-sm">
+                      {Object.entries(
+                        groupBy(
+                          answers,
+                          (a) =>
+                            filtered.find((q) => q.id === a.id)?.category ||
+                            "Misc"
+                        )
+                      ).map(([cat, arr]) => {
+                        const totalCat = filtered.filter(
+                          (q) => q.category === cat
+                        ).length;
+                        const correctCat = arr.filter((a) => a.correct).length;
+                        return (
+                          <li
+                            key={cat}
+                            className="flex items-center justify-between"
+                          >
+                            <span>{cat}</span>
+                            <span className="text-slate-600">
+                              {correctCat}/{arr.length} (
+                              {Math.round((correctCat / arr.length) * 100)}%)
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                  <div className="rounded-lg border bg-white p-4">
+                    <h3 className="mb-2 font-medium">Review Answers</h3>
+                    <ol className="max-h-72 space-y-2 overflow-auto pr-2 text-sm">
+                      {answers.map((a, i) => {
+                        const q = filtered.find((qq) => qq.id === a.id)!;
+                        return (
+                          <li key={q.id} className="rounded border p-2">
+                            <div className="mb-1 flex items-center justify-between gap-2">
+                              <span className="font-medium">
+                                {i + 1}. {q.statement}
+                              </span>
+                              <Badge
+                                variant={a.correct ? "default" : "destructive"}
+                              >
+                                {a.correct ? "Correct" : "Wrong"}
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-slate-600">
+                              Your justification:{" "}
+                              {a.justification || <em>—</em>}
+                            </div>
+                            <div className="mt-1 text-xs">
+                              Answer:{" "}
+                              <strong>{q.answer ? "Truth" : "Myth"}</strong> —{" "}
+                              {q.explanation}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <Button onClick={resetAll}>
+                    <RefreshCw className="mr-2 h-4 w-4" /> Play Again
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Footer */}
+          <footer className="mx-auto mt-6 max-w-3xl text-center text-xs text-slate-500">
+            <p>
+              Built for learning Scrum empiricism, roles, events, artifacts, and
+              anti-patterns. Myths debunked with concise, exam-level
+              explanations.
+            </p>
+          </footer>
+        </div>
+      </div>
+    </TooltipProvider>
+  );
+}
